@@ -1,0 +1,24 @@
+---
+title: "Final Project"
+author: "Martina Radoslavov"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load and Clean Data
+```{r}
+GliomaData <- read.csv('GliomaData/TCGA_GBM_LGG_Mutations_all.csv')
+head(GliomaData)
+```
+
+
+
+
+
+
+
+
