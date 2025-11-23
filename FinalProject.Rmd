@@ -21,6 +21,9 @@ head(GliomaData)
 GliomaINFO <- read.csv('GliomaData/TCGA_InfoWithGrade.csv')
 head(GliomaINFO)
 ```
+```{r}
+unique(GliomaINFO$Race)
+```
 
 ```{r Exploration}
 unique(GliomaData[, c("Grade", "Primary_Diagnosis")])
@@ -33,6 +36,12 @@ GliomaData[GliomaData == "NOT_MUTATED"] <- 0
 head(GliomaData)
 ```
 There are no missing data. 
+
+## Distribution/histogram Plots 
+### normal distribution? 
+
+## Box plots 
+
 
 ```{r Heatmap}
 corr_mat <- cor(GliomaINFO, use = "pairwise.complete.obs")
@@ -57,7 +66,10 @@ ggcorr(corr_mat,
 
 ```{r}
 tbl_summary(GliomaData %>% select(-c(Case_ID, Age_at_diagnosis, Project, Primary_Diagnosis)), by = Grade)
+# Add p-value to tbl
 ```
+
+## ESTABLISH COLINEARITY}
 
 ```{r}
 muts <- GliomaData %>% 
@@ -84,8 +96,12 @@ for (m in muts) {
   }
 }
 ```
-The following mutations do not show a significant difference between the two glioma grades: PIK3CA, BCOR, CSMD3, FAT4
+The following mutations do not show a significant difference between the two Glioma grades: PIK3CA, BCOR, CSMD3, FAT4
 We can omit them from the clustering model. 
+
+
+## Logistic Regression Model 
+
 
 
 
