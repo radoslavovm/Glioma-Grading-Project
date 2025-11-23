@@ -7,18 +7,85 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(GGally)
+library(gtsummary)
 ```
 
 ## Load and Clean Data
-```{r}
+```{r Load Data}
 GliomaData <- read.csv('GliomaData/TCGA_GBM_LGG_Mutations_all.csv')
 head(GliomaData)
+
+GliomaINFO <- read.csv('GliomaData/TCGA_InfoWithGrade.csv')
+head(GliomaINFO)
 ```
 
+```{r Exploration}
+unique(GliomaData[, c("Grade", "Primary_Diagnosis")])
+```
 
+```{r DELETE}
+any(is.na(GliomaData))
+GliomaData[GliomaData == "MUTATED"] <- 1
+GliomaData[GliomaData == "NOT_MUTATED"] <- 0
+head(GliomaData)
+```
+There are no missing data. 
 
+```{r Heatmap}
+corr_mat <- cor(GliomaINFO, use = "pairwise.complete.obs")
+threshold <- 0.3
+corr_mat_label <- ifelse(abs(corr_mat) >= threshold, corr_mat, NA)
 
+ggcorr(corr_mat,
+       label = TRUE,
+        label_size = 2,
+        hjust = 1,
+        size = 2,
+        layout.exp = 2,
+        # Provide the modified matrix for labels
+        label_round = 2,
+        geom = "tile",
+        # Use cutoff labels
+        label_color = "black",
+        label_alpha = TRUE,
+        name = "correlation",
+        corr = corr_mat_label)
+```
 
+```{r}
+tbl_summary(GliomaData %>% select(-c(Case_ID, Age_at_diagnosis, Project, Primary_Diagnosis)), by = Grade)
+```
+
+```{r}
+muts <- GliomaData %>% 
+  select(IDH1:PDGFRA) %>%
+  colnames()
+
+for (m in muts) {
+  cat("\n===== Testing:", m, "=====\n")
+  
+  tab <- table(GliomaData$Grade, GliomaData[[m]])
+  print(tab)
+  
+  exp_counts <- chisq.test(tab)$expected
+  cat("\nExpected counts:\n")
+  print(round(exp_counts, 2))
+  
+  # Check assumption
+  if (any(exp_counts < 1) || mean(exp_counts < 5) > 0.2) {
+    cat("\n Chi-square assumptions NOT met → using Fisher's exact test.\n")
+    print(fisher.test(tab))
+  } else {
+    cat("\n️ Chi-square assumptions OK.\n")
+    print(chisq.test(tab))
+  }
+}
+```
+The following mutations do not show a significant difference between the two glioma grades: PIK3CA, BCOR, CSMD3, FAT4
+We can omit them from the clustering model. 
 
 
 
