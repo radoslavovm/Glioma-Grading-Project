@@ -45,23 +45,13 @@ There are no missing data.
 
 ```{r Heatmap}
 corr_mat <- cor(GliomaINFO, use = "pairwise.complete.obs")
-threshold <- 0.3
-corr_mat_label <- ifelse(abs(corr_mat) >= threshold, corr_mat, NA)
 
-ggcorr(corr_mat,
+ggcorr(GliomaINFO,
        label = TRUE,
         label_size = 2,
         hjust = 1,
         size = 2,
-        layout.exp = 2,
-        # Provide the modified matrix for labels
-        label_round = 2,
-        geom = "tile",
-        # Use cutoff labels
-        label_color = "black",
-        label_alpha = TRUE,
-        name = "correlation",
-        corr = corr_mat_label)
+        layout.exp = 2)
 ```
 
 ```{r}
@@ -69,7 +59,21 @@ tbl_summary(GliomaData %>% select(-c(Case_ID, Age_at_diagnosis, Project, Primary
 # Add p-value to tbl
 ```
 
-## ESTABLISH COLINEARITY}
+## ESTABLISH COLINEARITY
+```{r}
+threshold <- 0.5
+
+high_corr_pairs <- which(abs(corr_mat) > threshold & lower.tri(corr_mat), arr.ind = TRUE)
+
+pairs_df <- data.frame(
+  Var1 = rownames(corr_mat)[high_corr_pairs[,1]],
+  Var2 = colnames(corr_mat)[high_corr_pairs[,2]],
+  Correlation = corr_mat[high_corr_pairs]
+)
+
+pairs_df
+```
+Because ATRX has a stronger correlation with Grade then TP53 would, we will remove TP53 from the model. 
 
 ```{r}
 muts <- GliomaData %>% 
@@ -99,9 +103,20 @@ for (m in muts) {
 The following mutations do not show a significant difference between the two Glioma grades: PIK3CA, BCOR, CSMD3, FAT4
 We can omit them from the clustering model. 
 
-
 ## Logistic Regression Model 
+```{r}
+removee <- c('PIK3CA', 'BCOR', 'CSMD3', 'FAT4', 'TP53')
 
+mData <- GliomaINFO %>%
+  select(-all_of(removee)) 
+```
 
+```{r}
+model <- glm(Grade ~ .,
+             data = mData,
+             family = binomial)
+summary(model)
+
+```
 
 
