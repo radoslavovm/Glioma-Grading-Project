@@ -9,6 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(dplyr)
+library(tidyr)
 library(GGally)
 library(gtsummary)
 ```
@@ -28,21 +29,105 @@ unique(GliomaINFO$Race)
 ```{r Exploration}
 unique(GliomaData[, c("Grade", "Primary_Diagnosis")])
 ```
-
-```{r DELETE}
-any(is.na(GliomaData))
-GliomaData[GliomaData == "MUTATED"] <- 1
-GliomaData[GliomaData == "NOT_MUTATED"] <- 0
-head(GliomaData)
-```
 There are no missing data. 
 
-## Distribution/histogram Plots 
-### normal distribution? 
+```{r Number of LGG vs GBM Cases}
+GliomaINFO %>% 
+  count(Grade) %>% 
+  mutate(Grade = factor(Grade, levels = c(0, 1),
+                        labels = c("LGG", "GBM"))) %>%
+  ggplot(aes(x = Grade, y = n, fill = Grade)) +
+  geom_col(width = 0.55, color = "white") +
+  geom_text(aes(label = n),
+            vjust = -0.3, size = 5, fontface = "bold") +
+  scale_fill_manual(values = c("#8ecae6", "#219ebc")) +
+  scale_y_continuous(limits = c(0, 550)) + 
+  labs(
+    title = "Number of LGG vs GBM Cases",
+    x = "Glioma Grade",
+    y = "Number of Patients"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
 
-## Box plots 
+```
+LGG cases are more frequent than GBM cases in our sample,
+which may influence class imbalance for downstream modeling.
 
+```{r Age at Diagnosis by Grade}
+GliomaINFO %>%
+  mutate(Grade = factor(Grade, labels = c("LGG", "GBM"))) %>%
+  ggplot(aes(x = Grade, y = Age_at_diagnosis, fill = Grade)) +
+  geom_boxplot(width = 0.6, alpha = 0.85) +
+  scale_fill_manual(values = c("#dda15e", "#bc6c25")) +
+  labs(
+    title = "Age Distribution by Glioma Grade",
+    x = "Glioma Grade",
+    y = "Age at Diagnosis (years)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+```
+This boxplot shows the age distribution for LGG and GBM patients.
+We can see that LGG patients are generally younger, with a median age in the early 40s.
+GBM patients are older on average, with a median close to 60.
+This matches what we usually see in glioma cases and shows a clear age difference between the two groups before we look at genetic mutations.
 
+## Can we stack this by Grade??
+```{r Mutation Frequencies Across 20 Genes}
+mut_long <- GliomaINFO %>%
+  select(IDH1:PDGFRA) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Gene",
+               values_to = "Mutated")
+
+mut_freq <- mut_long %>%
+  group_by(Gene) %>%
+  summarize(freq = mean(Mutated), .groups = "drop")
+
+ggplot(mut_freq, aes(x = reorder(Gene, freq), y = freq)) +
+  geom_col(fill = "#2c7fb8", width = 0.6) +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Mutation Frequencies of 20 Glioma-Associated Genes",
+    x = "Gene",
+    y = "Mutation Frequency"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+```
+This figure shows the mutation frequency of 20 glioma-associated genes.
+IDH1, TP53, and ATRX are the most frequently mutated genes in our dataset, which matches what is usually seen in glioma biology.
+Many other genes show much lower mutation rates, which also explains why some chi-square tests required Fisher’s exact test due to small expected counts.
+
+```{r}
+GliomaINFO %>%
+  ggplot(aes(x = Age_at_diagnosis)) +
+  geom_histogram(aes(y = ..density..),
+                 binwidth = 5, fill = "#8ecae6", color = "white", alpha = 0.8) +
+  geom_density(color = "#1f7a8c", linewidth = 1.2) +
+  labs(
+    title = "Age Distribution with Density Curve",
+    x = "Age at Diagnosis (years)",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14)
+```
+```{r}
+shapiro.test(GliomaINFO$Age_at_diagnosis)
+```
+The Shapiro–Wilk test (p < 0.001) indicates that age at diagnosis is not normally distributed.
+This matches the density plot, which shows a right-skewed and multimodal distribution due to younger LGG patients and older GBM patients.
+ 
 ```{r Heatmap}
 corr_mat <- cor(GliomaINFO, use = "pairwise.complete.obs")
 
