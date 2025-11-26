@@ -127,17 +127,44 @@ shapiro.test(GliomaINFO$Age_at_diagnosis)
 ```
 The Shapiro–Wilk test (p < 0.001) indicates that age at diagnosis is not normally distributed.
 This matches the density plot, which shows a right-skewed and multimodal distribution due to younger LGG patients and older GBM patients.
- 
-```{r Heatmap}
-corr_mat <- cor(GliomaINFO, use = "pairwise.complete.obs")
 
-ggcorr(GliomaINFO,
-       label = TRUE,
-        label_size = 2,
-        hjust = 1,
-        size = 2,
-        layout.exp = 2)
+```{r}
+library(ComplexUpset)
+library(ggplot2)
+
+mut_cols <- c("IDH1", "PTEN", "EGFR", "NF1", "PIK3R1", "FUBP1", "RB1", "SMARCA4", "GRIN2A", "IDH2", "PDGFRA")  # replace with your columns
+GliomaINFO$Grade <- factor(
+  GliomaINFO$Grade,
+  levels = c("0", "1"),
+  labels = c("LGG", "GBM")
+)
+
+
+GliomaINFO %>%
+  upset(
+    mut_cols,
+    base_annotations = list(
+      'Intersection size' = (
+        intersection_size(
+          counts = FALSE,
+        mapping = aes(fill = Grade)
+        )
+      )
+      ),
+  matrix = intersection_matrix(
+      geom = geom_point(size = 1)
+    ),
+    themes = upset_modify_themes(
+      theme(
+        panel.spacing = unit(14, "pt"),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 5),
+        plot.margin = margin(t = -10, b = 10)
+      )
+    )
+  )
 ```
+
+More of the cases with just an IDH1 mutation have LGG, while the groups having no mutation or just PTEN or just EGFR have more GBM diagnosis. 
 
 ```{r}
 tbl_summary(GliomaData %>% select(-c(Case_ID, Age_at_diagnosis, Project, Primary_Diagnosis)), by = Grade)
@@ -190,7 +217,8 @@ We can omit them from the clustering model.
 
 ## Logistic Regression Model 
 ```{r}
-removee <- c('PIK3CA', 'BCOR', 'CSMD3', 'FAT4', 'TP53')
+removee <- c('PIK3CA', 'BCOR', 'CSMD3', 'FAT4', 'TP53'
+             , 'Gender', 'Race', 'ATRX', 'CIC', 'MUC16', 'NOTCH1')
 
 mData <- GliomaINFO %>%
   select(-all_of(removee)) 
