@@ -15,16 +15,14 @@ library(gtsummary)
 ```
 
 ## Load and Clean Data
-```{r Load Data}
+```{r Load Data, results=FALSE}
 GliomaData <- read.csv('GliomaData/TCGA_GBM_LGG_Mutations_all.csv')
 head(GliomaData)
 
 GliomaINFO <- read.csv('GliomaData/TCGA_InfoWithGrade.csv')
 head(GliomaINFO)
 ```
-```{r}
-unique(GliomaINFO$Race)
-```
+
 
 ```{r Exploration}
 unique(GliomaData[, c("Grade", "Primary_Diagnosis")])
@@ -79,7 +77,6 @@ We can see that LGG patients are generally younger, with a median age in the ear
 GBM patients are older on average, with a median close to 60.
 This matches what we usually see in glioma cases and shows a clear age difference between the two groups before we look at genetic mutations.
 
-## Can we stack this by Grade??
 ```{r Mutation Frequencies Across 20 Genes}
 mut_long <- GliomaINFO %>%
   select(IDH1:PDGFRA) %>%
@@ -112,9 +109,12 @@ Many other genes show much lower mutation rates, which also explains why some ch
 ```{r}
 GliomaINFO %>%
   ggplot(aes(x = Age_at_diagnosis)) +
-  geom_histogram(aes(y = ..density..),
-                 binwidth = 5, fill = "#8ecae6", color = "white", alpha = 0.8) +
-  geom_density(color = "#1f7a8c", linewidth = 1.2) +
+  geom_histogram(aes(y = after_stat(density), fill = factor(Grade))
+                 , binwidth = 5, color = "white", alpha = 0.8) +
+  geom_density(
+    aes(color = factor(Grade)),  # also color by Grade
+    linewidth = 1.2
+  ) +
   labs(
     title = "Age Distribution with Density Curve",
     x = "Age at Diagnosis (years)",
@@ -128,17 +128,35 @@ shapiro.test(GliomaINFO$Age_at_diagnosis)
 The Shapiro–Wilk test (p < 0.001) indicates that age at diagnosis is not normally distributed.
 This matches the density plot, which shows a right-skewed and multimodal distribution due to younger LGG patients and older GBM patients.
 
+## ESTABLISH COLINEARITY
 ```{r}
+threshold <- 0.5
+corr_mat <- cor(GliomaINFO, use = "pairwise.complete.obs")
+
+high_corr_pairs <- which(abs(corr_mat) > threshold & lower.tri(corr_mat)
+                         , arr.ind = TRUE)
+
+pairs_df <- data.frame(
+  Var1 = rownames(corr_mat)[high_corr_pairs[,1]],
+  Var2 = colnames(corr_mat)[high_corr_pairs[,2]],
+  Correlation = corr_mat[high_corr_pairs]
+)
+
+pairs_df
+```
+
+```{r warning=FALSE}
 library(ComplexUpset)
 library(ggplot2)
 
-mut_cols <- c("IDH1", "PTEN", "EGFR", "NF1", "PIK3R1", "FUBP1", "RB1", "SMARCA4", "GRIN2A", "IDH2", "PDGFRA")  # replace with your columns
+mut_cols <- c("IDH1", "PTEN", "EGFR", "NF1"
+              , "PIK3R1", "FUBP1", "RB1", "SMARCA4"
+              , "GRIN2A", "IDH2", "PDGFRA")  # replace with your columns
 GliomaINFO$Grade <- factor(
   GliomaINFO$Grade,
   levels = c("0", "1"),
   labels = c("LGG", "GBM")
 )
-
 
 GliomaINFO %>%
   upset(
@@ -167,26 +185,12 @@ GliomaINFO %>%
 More of the cases with just an IDH1 mutation have LGG, while the groups having no mutation or just PTEN or just EGFR have more GBM diagnosis. 
 
 ```{r}
-tbl_summary(GliomaData %>% select(-c(Case_ID, Age_at_diagnosis, Project, Primary_Diagnosis)), by = Grade)
+tbl_summary(GliomaData %>% select(-c(Case_ID, Age_at_diagnosis, Project
+                                     , Primary_Diagnosis)), by = Grade)
 # Add p-value to tbl
 ```
 
-## ESTABLISH COLINEARITY
-```{r}
-threshold <- 0.5
-
-high_corr_pairs <- which(abs(corr_mat) > threshold & lower.tri(corr_mat), arr.ind = TRUE)
-
-pairs_df <- data.frame(
-  Var1 = rownames(corr_mat)[high_corr_pairs[,1]],
-  Var2 = colnames(corr_mat)[high_corr_pairs[,2]],
-  Correlation = corr_mat[high_corr_pairs]
-)
-
-pairs_df
-```
 Because ATRX has a stronger correlation with Grade then TP53 would, we will remove TP53 from the model. 
-
 ```{r}
 muts <- GliomaData %>% 
   select(IDH1:PDGFRA) %>%
@@ -204,10 +208,10 @@ for (m in muts) {
   
   # Check assumption
   if (any(exp_counts < 1) || mean(exp_counts < 5) > 0.2) {
-    cat("\n Chi-square assumptions NOT met → using Fisher's exact test.\n")
+    cat("\n Chi-square assumptions NOT met -> using Fisher's exact test.\n")
     print(fisher.test(tab))
   } else {
-    cat("\n️ Chi-square assumptions OK.\n")
+    cat("\n Chi-square assumptions OK.\n")
     print(chisq.test(tab))
   }
 }
