@@ -86,21 +86,30 @@ mut_long <- GliomaINFO %>%
 
 mut_freq <- mut_long %>%
   group_by(Gene) %>%
-  summarize(freq = mean(Mutated), .groups = "drop")
+  summarize(
+    count = sum(Mutated),          # number of mutated samples
+    freq  = mean(Mutated),         # percentage mutated
+    .groups = "drop"
+  )
 
 ggplot(mut_freq, aes(x = reorder(Gene, freq), y = freq)) +
   geom_col(fill = "#2c7fb8", width = 0.6) +
   coord_flip() +
+  geom_text(
+    aes(label = count, y = freq + 0.02),   # position slightly above the bar
+    size = 3,
+    fontface = "bold",
+    color = "#1d5e8a"
+  ) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(
-    title = "Mutation Frequencies of 20 Glioma-Associated Genes",
+    title = "Mutation Frequencies of 20 \n Glioma-Associated Genes",
     x = "Gene",
     y = "Mutation Frequency"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    plot.title = element_text(face = "bold", hjust = 0.5)
-  )
+    plot.title = element_text(face = "bold", hjust = 0.5))
 ```
 This figure shows the mutation frequency of 20 glioma-associated genes.
 IDH1, TP53, and ATRX are the most frequently mutated genes in our dataset, which matches what is usually seen in glioma biology.
