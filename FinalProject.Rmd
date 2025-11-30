@@ -1,6 +1,6 @@
 ---
 title: "Final Project"
-author: "Martina Radoslavov"
+author: "Martina Radoslavov, Yue Du, Wenqi Zhang"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
@@ -8,10 +8,16 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+# load the packages
 library(dplyr)
 library(tidyr)
 library(GGally)
 library(gtsummary)
+library(ComplexUpset)
+library(ggplot2)
+library(purrr)
+library(tibble)
+library(broom)
 ```
 
 ## Load and Clean Data
@@ -78,17 +84,19 @@ GBM patients are older on average, with a median close to 60.
 This matches what we usually see in glioma cases and shows a clear age difference between the two groups before we look at genetic mutations.
 
 ```{r Mutation Frequencies Across 20 Genes}
+# data mutation: wide to long
 mut_long <- GliomaINFO %>%
   select(IDH1:PDGFRA) %>%
   pivot_longer(cols = everything(),
                names_to = "Gene",
                values_to = "Mutated")
 
+# counts and frequencies
 mut_freq <- mut_long %>%
   group_by(Gene) %>%
   summarize(
-    count = sum(Mutated),          # number of mutated samples
-    freq  = mean(Mutated),         # percentage mutated
+    count = sum(Mutated), 
+    freq  = mean(Mutated),
     .groups = "drop"
   )
 
@@ -96,7 +104,7 @@ ggplot(mut_freq, aes(x = reorder(Gene, freq), y = freq)) +
   geom_col(fill = "#2c7fb8", width = 0.6) +
   coord_flip() +
   geom_text(
-    aes(label = count, y = freq + 0.02),   # position slightly above the bar
+    aes(label = count, y = freq + 0.02), 
     size = 3,
     fontface = "bold",
     color = "#1d5e8a"
@@ -112,8 +120,7 @@ ggplot(mut_freq, aes(x = reorder(Gene, freq), y = freq)) +
     plot.title = element_text(face = "bold", hjust = 0.5))
 ```
 This figure shows the mutation frequency of 20 glioma-associated genes.
-IDH1, TP53, and ATRX are the most frequently mutated genes in our dataset, which matches what is usually seen in glioma biology.
-Many other genes show much lower mutation rates, which also explains why some chi-square tests required Fisher’s exact test due to small expected counts.
+IDH1, TP53, and ATRX are the most frequently mutated genes in our dataset, which matches what is usually seen in glioma biology. Many other genes show much lower mutation rates, which also explains why some chi-square tests required Fisher’s exact test due to small expected counts.
 
 ```{r}
 GliomaINFO %>%
@@ -131,11 +138,15 @@ GliomaINFO %>%
   ) +
   theme_minimal(base_size = 14)
 ```
+
+This figure illustrates the age distribution of glioma patients across different grades.
+For Grade 0 (lower-grade glioma), the density curve peaks around ages 30 to 45, whereas for Grade 1 (GBM), the peak occurs between approximately 55 and 70 years.
+Overall, Grade 1 patients are diagnosed at a substantially older age compared to Grade 0 patients.
+
 ```{r}
 shapiro.test(GliomaINFO$Age_at_diagnosis)
 ```
-The Shapiro–Wilk test (p < 0.001) indicates that age at diagnosis is not normally distributed.
-This matches the density plot, which shows a right-skewed and multimodal distribution due to younger LGG patients and older GBM patients.
+The Shapiro–Wilk test (p < 0.001) indicates that age at diagnosis is not normally distributed. This matches the density plot, which shows a right-skewed and multimodal distribution due to younger LGG patients and older GBM patients.
 
 ## ESTABLISH COLINEARITY
 ```{r}
@@ -153,23 +164,67 @@ pairs_df <- data.frame(
 
 pairs_df
 ```
+The analysis revealed several notable associations: Age_at_diagnosis showed a positive correlation with Grade, indicating that higher-grade tumors tend to occur in older patients. IDH1 was strongly negatively correlated with both Grade and Age_at_diagnosis, consistent with the biological understanding that IDH1 mutations are more frequent in younger LGG patients. Additionally, ATRX and TP53 demonstrated a moderate positive correlation, reflecting their known co-occurrence patterns in glioma. These findings highlight variable pairs that may introduce multicollinearity in downstream modeling and therefore should be considered carefully in model specification.
 
-```{r warning=FALSE}
-library(ComplexUpset)
-library(ggplot2)
+## do association vs causation 
+```{r}
+# unadjusted model: Grade ~ IDH1
+mod_unadj <- glm(
+  Grade ~ IDH1,
+  data   = GliomaINFO,
+  family = binomial
+)
+
+summary(mod_unadj)
+
+# extract OR and CI
+OR_unadj  <- exp(coef(mod_unadj)["IDH1"])
+CI_unadj  <- exp(confint(mod_unadj)["IDH1", ])
+
+OR_unadj
+CI_unadj
+
+
+# age-adjusted model: Grade ~ IDH1 + Age
+mod_adj <- glm(
+  Grade ~ IDH1 + Age_at_diagnosis,
+  data   = GliomaINFO,
+  family = binomial
+)
+
+summary(mod_adj)
+
+# extract adjusted OR and CI
+OR_adj <- exp(coef(mod_adj)["IDH1"])
+CI_adj <- exp(confint(mod_adj)["IDH1", ])
+
+OR_adj
+CI_adj
+
+
+# calculate % change in OR
+OR_change_pct <- (OR_adj - OR_unadj) / OR_unadj * 100
+OR_change_pct
+```
+
+When age at diagnosis was incorporated into the regression model, the estimated effect of IDH1 mutation changed appreciably. The odds ratio for IDH1 shifted from approximately 0.02 in the unadjusted model to roughly 0.03–0.04 after adjustment, representing a relative change of about 78%. Such a substantial alteration in effect size indicates that age functions as a meaningful confounder in the relationship between IDH1 mutation status and glioma grade—likely because IDH1-mutant tumors tend to occur disproportionately in younger patients, who are themselves more likely to be diagnosed with lower-grade glioma. Importantly, however, even after accounting for age, IDH1 remains one of the strongest independent predictors in the model, with its adjusted odds ratio still far below 1 and its association with grade retained at an exceptionally high level of statistical significance.
+
+```{r warning=FALSE, fig.width=12, fig.height=8}
+library(patchwork)
 
 mut_cols <- c("IDH1", "PTEN", "EGFR", "NF1"
               , "PIK3R1", "FUBP1", "RB1", "SMARCA4"
-              , "GRIN2A", "IDH2", "PDGFRA")  # replace with your columns
+              , "GRIN2A", "IDH2", "PDGFRA", "ATRX", "TP53")  # replace with your columns
 GliomaINFO$Grade <- factor(
   GliomaINFO$Grade,
   levels = c("0", "1"),
   labels = c("LGG", "GBM")
 )
 
-GliomaINFO %>%
+p <- GliomaINFO %>%
   upset(
     mut_cols,
+    min_size = 5,
     base_annotations = list(
       'Intersection size' = (
         intersection_size(
@@ -189,44 +244,146 @@ GliomaINFO %>%
       )
     )
   )
+p + plot_layout(heights = c(0.5, 0.5, 0.20))
 ```
 
 More of the cases with just an IDH1 mutation have LGG, while the groups having no mutation or just PTEN or just EGFR have more GBM diagnosis. 
 
 ```{r}
-tbl_summary(GliomaData %>% select(-c(Case_ID, Age_at_diagnosis, Project
-                                     , Primary_Diagnosis)), by = Grade)
-# Add p-value to tbl
-```
-
-Because ATRX has a stronger correlation with Grade then TP53 would, we will remove TP53 from the model. 
-```{r}
-muts <- GliomaData %>% 
+# genes
+muts <- GliomaData %>%
   select(IDH1:PDGFRA) %>%
   colnames()
 
-for (m in muts) {
-  cat("\n===== Testing:", m, "=====\n")
+# compute difference in proportions
+diff_tbl <- map_dfr(muts, function(m) {
   
   tab <- table(GliomaData$Grade, GliomaData[[m]])
-  print(tab)
   
-  exp_counts <- chisq.test(tab)$expected
-  cat("\nExpected counts:\n")
-  print(round(exp_counts, 2))
+  prop_gbm <- tab["GBM", "MUTATED"] / sum(tab["GBM", ])
+  prop_lgg <- tab["LGG", "MUTATED"] / sum(tab["LGG", ])
   
-  # Check assumption
-  if (any(exp_counts < 1) || mean(exp_counts < 5) > 0.2) {
-    cat("\n Chi-square assumptions NOT met -> using Fisher's exact test.\n")
-    print(fisher.test(tab))
-  } else {
-    cat("\n Chi-square assumptions OK.\n")
-    print(chisq.test(tab))
-  }
-}
+  tibble(
+    Gene = m,
+    prop_GBM = round(prop_gbm, 3),
+    prop_LGG = round(prop_lgg, 3),
+    diff_prop = round(prop_gbm - prop_lgg, 3)  # THIS is what you want
+  )
+})
+
+diff_tbl
 ```
-The following mutations do not show a significant difference between the two Glioma grades: PIK3CA, BCOR, CSMD3, FAT4
-We can omit them from the clustering model. 
+
+The descriptive table reveals substantial molecular differences between GBM and LGG.
+Among all genes, IDH1 shows the most striking contrast, with a mutation rate of 78% in LGG but only about 6% in GBM, which aligns with the well-established characteristics of the IDH-mutant LGG subtype. ATRX and CIC are also markedly enriched in LGG, whereas PTEN and EGFR exhibit high mutation frequencies in GBM, consistent with their roles as canonical GBM driver genes. TP53 mutations are common in both groups but occur more frequently in LGG. Given that ATRX exhibits a substantially stronger correlation with Grade compared with TP53, TP53 was excluded from the model to mitigate multicollinearity and improve model stability, while ATRX was retained as the representative predictor.
+
+```{r}
+muts <- GliomaData %>%
+  select(IDH1:PDGFRA) %>%
+  colnames()
+
+result_tbl <- map_dfr(muts, function(m) {
+  tab <- table(GliomaData$Grade, GliomaData[[m]])
+
+  exp_counts <- suppressWarnings(chisq.test(tab)$expected)
+  low_expected <- any(exp_counts < 1) || mean(exp_counts < 5) > 0.2
+
+  if (low_expected) {
+    tst <- fisher.test(tab)
+    test_name <- "Fisher"
+    stat <- NA_real_
+  } else {
+    tst <- suppressWarnings(chisq.test(tab))
+    test_name <- "Chi-square"
+    stat <- unname(tst$statistic)
+  }
+
+  p <- tst$p.value
+
+  prop_gbm <- tab["GBM", "MUTATED"] / sum(tab["GBM", ])
+  prop_lgg <- tab["LGG", "MUTATED"] / sum(tab["LGG", ])
+
+  interp <- case_when(
+    p >= 0.05 ~ "No association",
+    prop_lgg > prop_gbm ~ "Enriched in LGG",
+    TRUE ~ "Enriched in GBM"
+  )
+
+  tibble(
+    Gene = m,
+    Test = test_name,
+    Statistic = round(stat, 2),
+    p_value = signif(p, 3),
+    Significant = ifelse(p < 0.05, "Yes", "No"),
+    Interpretation = interp
+  )
+})
+
+result_tbl <- result_tbl %>% arrange(p_value)
+
+result_tbl
+
+result_tbl
+```
+The chi-square indicates that PIK3CA, BCOR, CSMD3, and FAT4 do not exhibit statistically significant differences in mutation frequency between GBM and LGG. Because these genes do not contribute to distinguishing the two tumor grades, we exclude them from the clustering model to improve interpret ability and reduce noise.
+
+```{r}
+# mutation gene
+muts <- GliomaData %>%
+  select(IDH1:PDGFRA) %>%
+  colnames()
+
+# compute association for each gene
+result_tbl <- map_dfr(muts, function(m) {
+  
+  # contingency table
+  tab <- table(GliomaData$Grade, GliomaData[[m]])
+  
+  # Chi-square expected counts
+  exp_counts <- suppressWarnings(chisq.test(tab)$expected)
+  low_expected <- any(exp_counts < 1) || mean(exp_counts < 5) > 0.2
+  
+  # Fisher/Chi-square
+  if (low_expected) {
+    test_name <- "Fisher"
+    tst <- fisher.test(tab)
+    stat <- NA_real_
+  } else {
+    test_name <- "Chi-square"
+    tst <- suppressWarnings(chisq.test(tab))
+    stat <- unname(tst$statistic)
+  }
+  
+  # OR
+  or_test <- fisher.test(tab)
+  OR <- unname(or_test$estimate)
+  CI <- or_test$conf.int
+  
+  # results
+  tibble(
+    Gene = m,
+    Test = test_name,
+    Statistic = round(stat, 2),
+    OR = round(OR, 2),
+    CI_lower = round(CI[1], 2),
+    CI_upper = round(CI[2], 2),
+    p_value = signif(tst$p.value, 3),
+    Significant = tst$p.value < 0.05
+  )
+})
+
+# keep only significant ones
+result_tbl <- result_tbl %>%
+  filter(Significant) %>%# keep only p < 0.05
+  select(-Significant) %>%# drop the column
+  arrange(p_value)
+
+result_tbl
+```
+
+IDH1, ATRX, CIC, FUBP1, NOTCH1, TP53, as well as IDH2 and SMARCA4 all have odds ratios clearly below 1, with 95% confidence intervals entirely below 1. This indicates that mutations in these genes are more common among LGG patients. Among them, the exceptionally large chi-square statistic and extremely small p-value for IDH1 suggest that it is one of the strongest markers distinguishing the two grades.
+
+In contrast, PTEN, EGFR, RB1, and MUC16, along with GRIN2A, PIK3R1, PDGFRA, and NF1, exhibit odds ratios greater than 1, with confidence intervals that do not cross 1. This demonstrates that these mutations occur more frequently in GBM and represent more typical molecular features of high-grade glioma. Notably, PTEN, RB1, and EGFR show particularly large chi-square values, highlighting their strong association with GBM.
 
 ## Logistic Regression Model 
 ```{r}
@@ -244,5 +401,13 @@ model <- glm(Grade ~ .,
 summary(model)
 
 ```
+
+
+From the results, only age among the demographic variables remained significant in the multivariable model. The regression coefficient for Age_at_diagnosis was $0.048$ with $p = 4.6\times10^{-8}$, corresponding to an odds ratio of approximately $1.05$, indicating that after adjusting for all genetic predictors, each additional year of age increases the odds of being classified as GBM by about $5%$. The coefficients for Gender and Race were $-0.14$ with $p = 0.52$ and $0.35$ with $p = 0.21$, respectively, suggesting that once genetic information is taken into account, neither gender nor race shows an independent association with Grade—consistent with the earlier descriptive findings.
+
+At the molecular level, the model yields a more refined estimate of independent genetic effects. IDH1 has a markedly negative coefficient $-3.53$ with $p < 2\times10^{-16}$ and odds ratio approximately $0.03$, remaining the strongest negative predictor, with its mutation strongly indicative of LGG. CIC has coefficient $-1.89$ with $p = 0.0043$ and odds ratio approximately $0.15$, and NF1 has coefficient $-0.83$ with $p = 0.012$ and odds ratio approximately $0.43$, both retaining significant negative effects after multivariable adjustment, indicating that these mutations are likewise more common in LGG. Conversely, TP53 shows coefficient $0.97$ with $p = 0.0023$ and odds ratio approximately $2.64$, PTEN shows coefficient $0.83$ with $p = 0.0045$ and odds ratio approximately $2.29$, and PIK3R1 shows coefficient $1.12$ with $p = 0.021$ and odds ratio approximately $3.06$, demonstrating significant positive associations, with their mutations substantially increasing the probability of GBM. MUC16 shows a positive but non-significant trend with $p \approx 0.099$, while ATRX, EGFR, and RB1 are no longer significant in the multivariable model, suggesting that their effects are partially absorbed by other strongly correlated markers such as IDH1, TP53, and CIC.
+
+Overall, the reduction in residual deviance from $1141.28$ to $563.64$, together with an AIC of $591.64$, indicates that age together with this limited set of key mutation markers forms a group of strong and independent predictors of glioma Grade.
+
 
 
