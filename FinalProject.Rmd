@@ -166,7 +166,7 @@ pairs_df
 ```
 The analysis revealed several notable associations: Age_at_diagnosis showed a positive correlation with Grade, indicating that higher-grade tumors tend to occur in older patients. IDH1 was strongly negatively correlated with both Grade and Age_at_diagnosis, consistent with the biological understanding that IDH1 mutations are more frequent in younger LGG patients. Additionally, ATRX and TP53 demonstrated a moderate positive correlation, reflecting their known co-occurrence patterns in glioma. These findings highlight variable pairs that may introduce multicollinearity in downstream modeling and therefore should be considered carefully in model specification.
 
-## do association vs causation 
+## Confounding Variables 
 ```{r}
 # unadjusted model: Grade ~ IDH1
 mod_unadj <- glm(
@@ -387,8 +387,7 @@ In contrast, PTEN, EGFR, RB1, and MUC16, along with GRIN2A, PIK3R1, PDGFRA, and 
 
 ## Logistic Regression Model 
 ```{r}
-removee <- c('PIK3CA', 'BCOR', 'CSMD3', 'FAT4', 'TP53'
-             , 'Gender', 'Race', 'ATRX', 'CIC', 'MUC16', 'NOTCH1')
+removee <- c('PIK3CA', 'BCOR', 'CSMD3', 'FAT4', 'TP53', 'Gender', 'Race', 'MUC16', 'NOTCH1', 'Age_at_diagnosis', 'FUBP1', 'SMARCA4')
 
 mData <- GliomaINFO %>%
   select(-all_of(removee)) 
@@ -402,6 +401,23 @@ summary(model)
 
 ```
 
+```{r}
+pred_prob <- predict(model, type="response")
+pred <- ifelse(pred_prob > 0.5, 1, 0)
+
+table(Predicted = pred, Actual = mData$Grade)
+
+```
+```{r}
+library(pROC)
+roc_obj <- roc(mData$Grade, pred_prob)
+auc(roc_obj)
+plot(roc_obj)
+```
+```{r}
+library(car)
+vif(model)
+```
 
 From the results, only age among the demographic variables remained significant in the multivariable model. The regression coefficient for Age_at_diagnosis was $0.048$ with $p = 4.6\times10^{-8}$, corresponding to an odds ratio of approximately $1.05$, indicating that after adjusting for all genetic predictors, each additional year of age increases the odds of being classified as GBM by about $5%$. The coefficients for Gender and Race were $-0.14$ with $p = 0.52$ and $0.35$ with $p = 0.21$, respectively, suggesting that once genetic information is taken into account, neither gender nor race shows an independent association with Grade—consistent with the earlier descriptive findings.
 
